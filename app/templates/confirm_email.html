@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Please Confirm Your Appointment</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 40px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .event-details {
+            background-color: #f8f9fa;
+            border-left: 4px solid #1a73e8;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .event-details h2 {
+            margin-top: 0;
+            color: #202124;
+            font-size: 18px;
+        }
+        .event-info {
+            margin: 10px 0;
+            color: #5f6368;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            color: #856404;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #1a73e8;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 4px;
+            font-weight: 600;
+            text-align: center;
+            margin: 20px 0;
+            font-size: 16px;
+        }
+        .cta-button:hover {
+            background-color: #1557b0;
+        }
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            color: #5f6368;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Please Confirm Your Appointment</h1>
+            <p>We need to verify that you'll be attending</p>
+        </div>
+        
+        <div class="event-details">
+            <h2>{{ event_title }}</h2>
+            <div class="event-info">
+                <strong>📆 Date & Time:</strong><br>
+                {{ event_start }} - {{ event_end }}<br>
+                {{ timezone }}
+            </div>
+        </div>
+        
+        <div class="warning">
+            <strong>⚠️ Action Required</strong><br>
+            If we don't receive your confirmation within the next hour, your appointment will be automatically cancelled to free up the time slot.
+        </div>
+        
+        <div class="button-container">
+            <a href="{{ confirmation_url }}" class="cta-button">
+                ✓ Confirm My Appointment
+            </a>
+        </div>
+        
+        <p style="text-align: center; color: #5f6368;">
+            By confirming, you're letting us know you'll definitely be there. We appreciate your time!
+        </p>
+        
+        <div class="footer">
+            <p>If you're unable to attend, please simply ignore this email and the appointment will be cancelled automatically.</p>
+            <p style="font-size: 12px; color: #80868b;">
+                This is an automated message. Please do not reply to this email.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

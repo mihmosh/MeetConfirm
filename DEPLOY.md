@@ -2,6 +2,12 @@
 
 This guide provides a step-by-step walkthrough for deploying the MeetConfirm service to your Google Cloud Platform project. The process is almost fully automated and should take about 15 minutes.
 
+## Why This Matters
+
+In a world of complex cloud deployments, MeetConfirm demonstrates a different approach. This project is a showcase of how modern AI-assisted tools and a tightly integrated cloud ecosystem can make sophisticated, event-driven applications accessible to everyone.
+
+The deployment script, co-developed with **Gemini 1.5 Pro and Cline**, automates nearly every step, from API enablement to container deployment. It's a practical example of how AI can serve as a "DevOps engineer in a box," allowing founders and developers to focus on building products, not just managing infrastructure.
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed and configured:
@@ -13,32 +19,7 @@ Before you begin, ensure you have the following installed and configured:
 
 ## Automatic Deployment
 
-The deployment process is handled by a single script that automates resource creation and configuration.
-
-### What the Script Does
-
-1.  **Checks Dependencies:** Verifies that `gcloud` is installed and authenticated.
-2.  **Initializes Project:** Prompts for your GCP Project ID and a region, then enables all necessary APIs:
-    *   Cloud Run
-    *   Cloud Tasks
-    *   Secret Manager
-    *   Firestore
-    *   Google Calendar
-    *   Gmail
-    *   Cloud Build
-3.  **Handles Authentication (Manual Step):**
-    *   The script generates a unique OAuth URL. You must open this URL in your browser.
-    *   You will be prompted to grant the application permission to access your Calendar and Gmail.
-    *   After granting permission, you will be redirected to a `localhost` URL. **Copy this entire URL** and paste it back into the terminal.
-    *   The script then automatically obtains a refresh token and stores it securely in Secret Manager.
-4.  **Provisions Infrastructure:**
-    *   Creates a Firestore database in Native mode.
-    *   Creates a Cloud Tasks queue for scheduling emails.
-5.  **Deploys the Application:**
-    *   Builds a container image using Cloud Build.
-    *   Deploys the image to a new Cloud Run service.
-6.  **Configures Calendar Watch:**
-    *   Once the service is live, the script automatically calls the `/setup-calendar-watch` endpoint to configure the Google Calendar webhook.
+The deployment process is handled by a single script that automates resource creation and configuration. Simply run the script, and it will guide you through the process.
 
 ### Running the Script
 
@@ -50,7 +31,23 @@ The deployment process is handled by a single script that automates resource cre
 
 **On Linux/macOS (Bash):**
 
-*(Note: A Bash version of the deployment script will be provided in a future update.)*
+```bash
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
+```
+
+### The Process
+
+1.  **Project Configuration:** The script will first ask for your GCP Project ID and desired region.
+2.  **Credential Creation (Manual Step):** The script will check for a `client_secret.json` file. If it's not found, it will pause and provide you with a URL and clear, step-by-step instructions to create and download the file.
+3.  **Browser Authentication (Manual Step):** The script will then generate another URL. Open this in your browser to grant the application permission to access your Google Calendar and Gmail. Paste the final redirect URL back into the terminal when prompted.
+4.  **Automated Setup:** The script will then take over and automatically:
+    *   Enable all necessary Google Cloud APIs.
+    *   Create a Firestore database and a Cloud Tasks queue.
+    *   Securely store your credentials in Secret Manager.
+    *   Build and deploy the application to Cloud Run.
+    *   Perform a health check to ensure the service is live.
+    *   Configure the Google Calendar webhook.
 
 ### Expected Output
 
@@ -64,17 +61,6 @@ A successful deployment will look like this:
 ✓ Service deployed: https://meetconfirm-xxxxxx.run.app
 ✓ Calendar watch configured!
 ```
-
-## Manual Setup Alternative
-
-For those who prefer a manual approach, you can perform the steps from the script using the GCP Console:
-
-1.  Enable all the APIs listed above.
-2.  Create a Firestore database.
-3.  Create a Cloud Tasks queue.
-4.  Create OAuth 2.0 credentials in the "APIs & Services" console and store the JSON in Secret Manager.
-5.  Build and deploy the container to Cloud Run, ensuring all required environment variables are set.
-6.  Manually call the `/setup-calendar-watch` endpoint to configure the webhook.
 
 ## Verification
 
@@ -92,9 +78,6 @@ After deployment, you can verify that the service is running correctly:
     curl -X POST -H "Authorization: Bearer $(gcloud auth print-identity-token)" https://<your-service-url>/api/v1/onboarding/run-test
     ```
     This will send a welcome email and create a test event in your calendar, which will trigger the confirmation flow.
-
-3.  **Check Logs:**
-    Monitor the logs for your service in the Cloud Run section of the GCP Console to see the application processing events.
 
 ---
 

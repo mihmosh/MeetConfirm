@@ -4,16 +4,23 @@ function Setup-Auth {
     function Log($m){Write-Host "[INFO] $m" -ForegroundColor Cyan}
     function OK($m){Write-Host "[OK] $m" -ForegroundColor Green}
     function Warn($m){Write-Host "[WARN] $m" -ForegroundColor Yellow}
+    function Err($m){Write-Host "[ERROR] $m" -ForegroundColor Red}
 
-    if (-not (Test-Path "google_credentials.json")) {
-        Warn "Create OAuth client (Desktop app) and save as google_credentials.json"
-        Start-Process "https://console.cloud.google.com/apis/credentials?project=$ProjectId"
-        Read-Host "Press Enter after placing the file here"
+    $secretFile = "client_secret.json"
+    if (-not (Test-Path $secretFile)) {
+        Err "$secretFile not found. This file is required for authentication."
+        Warn "Please follow these steps:"
+        Warn "1. Open the following URL in your browser:"
+        Warn "   https://console.cloud.google.com/apis/credentials?project=$ProjectId"
+        Warn "2. Click '+ CREATE CREDENTIALS' -> 'OAuth client ID'."
+        Warn "3. Select 'Desktop app' as the application type."
+        Warn "4. Click 'DOWNLOAD JSON' and save the file as '$secretFile' in the project root."
+        Read-Host "Press Enter once you have created and saved the file."
     }
-    OK "google_credentials.json found"
+    OK "$secretFile found."
 
     Add-Type -AssemblyName System.Web
-    $client = Get-Content "google_credentials.json" | ConvertFrom-Json
+    $client = Get-Content $secretFile | ConvertFrom-Json
     $cid = $client.client_id; if (-not $cid) { $cid = $client.installed.client_id }
     $secret = $client.client_secret; if (-not $secret) { $secret = $client.installed.client_secret }
     $scope = "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/cloud-platform"

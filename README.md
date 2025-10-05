@@ -4,43 +4,49 @@
 
 It was created as a practical tool for founders and product teams who use tools like Firebase In-App Messaging to schedule user interviews and demos. As Sam Altman might describe it, MeetConfirm is like "fast fashion SaaS": simple, useful, and nearly cost-free to operate.
 
+### Executive Summary
+
+*   **What it is:** A serverless, open-source tool that automatically sends confirmation emails for Google Calendar events and cancels them if not confirmed.
+*   **Who it's for:** Founders, product managers, and researchers who schedule meetings at scale and need to reduce no-shows.
+*   **Why it's unique:** It's a showcase of a vertically integrated Google Cloud solution, designed to be deployed in 15 minutes and run for virtually free.
+
 ### Onboarding and Confirmation Flow
 
 | Welcome Email | Confirmation Request |
 | :---: | :---: |
 | ![Welcome Email](images/intro%20email.png) | ![Confirmation Email](images/confirmation%20email.png) |
 
-## Feature Highlights
+## The Google Vertical Chain
 
-*   **Automated Confirmations & Cancellations:** Automatically sends confirmation emails and cancels meetings that are not confirmed, freeing up your calendar.
-*   **Deep Google Cloud Integration:** A showcase of vertical integration using Cloud Run, Cloud Tasks, Secret Manager, Firestore, Google Calendar, and Gmail.
-*   **15-Minute Deployment:** Get up and running quickly with a single script. No complex YAML or DevOps experience required.
-*   **Open Source:** MIT licensed and fully transparent.
-
-## Use Case
-
-MeetConfirm is designed to automate the final step of a user booking workflow, especially common in product development and user research:
-
-1.  **Firebase In-App Messaging:** A user receives an in-app message with an invitation to book a meeting.
-2.  **Google Calendar:** The user books a slot directly in your Google Calendar.
-3.  **MeetConfirm:** The service detects the new event, schedules a confirmation email to be sent 2 hours before the meeting, and a cancellation task to run 1 hour before.
-4.  **Gmail:** The user receives a confirmation email with a one-click confirmation link. If they don't confirm, the event is automatically deleted.
-
-This entire process runs in the background, with no UI to manage.
-
-## Google Architecture Overview
-
-The project demonstrates a simple, powerful, vertically-integrated scenario on a single cloud stack.
+MeetConfirm is a powerful example of a "vertical chain" application built entirely on the Google Cloud stack. Each service seamlessly hands off to the next, creating a robust, automated workflow with minimal overhead.
 
 ```mermaid
 graph TD
-    A[Firebase In-App Messaging] -->|User books slot| B(Google Calendar);
-    B -->|Webhook notification| C{MeetConfirm on Cloud Run};
-    C -->|Stores event state| D[Firestore];
-    C -->|Schedules tasks| E[Cloud Tasks];
-    E -->|Triggers email task| C;
-    C -->|Sends confirmation| F(Gmail);
+    subgraph User Interaction
+        A[Firebase In-App/Email] -->|User books a meeting| B(Google Calendar);
+    end
+    subgraph Automated Backend
+        B -->|Event Created Webhook| C{MeetConfirm on Cloud Run};
+        C -->|1. Create Event State| D[Firestore];
+        C -->|2. Schedule Timers| E[Cloud Tasks];
+        E -- T-2 hours -->|3. Trigger Confirmation| C;
+        C -->|4. Send Email| F(Gmail API);
+    end
+    style C fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
+    style F fill:#DB4437,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#0F9D58,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#F4B400,stroke:#fff,stroke-width:2px,color:#fff
+    style E fill:#F4B400,stroke:#fff,stroke-width:2px,color:#fff
 ```
+
+This architecture demonstrates how to build a sophisticated, event-driven system without managing a single server or database cluster.
+
+## Feature Highlights
+
+*   **Automated Confirmations & Cancellations:** Reduce no-shows and administrative overhead.
+*   **Deep Google Cloud Integration:** A showcase of Cloud Run, Cloud Tasks, Secret Manager, Firestore, Google Calendar, and Gmail.
+*   **15-Minute Deployment:** Get up and running quickly with a single script.
+*   **Open Source:** MIT licensed and fully transparent.
 
 ## Economic Model
 
@@ -73,8 +79,9 @@ MeetConfirm is designed to be virtually free for most real-world scenarios by le
 ---
 
 **Maintainer:** Michal Barodkin (Blatt sp. z o.o., Warsaw)  
+*Founder at [HeartScan](https://heartscan.app) & Alumnus of [Google for Startups Campus, Warsaw](https://www.campus.co/warsaw/)*  
 **Contact:** michal.b@heartscan.app  
-*Built with Gemini 2.5 Pro + Cline (AI-assisted coding)*
+*Built with Gemini 1.5 Pro + Cline (AI-assisted coding)*
 
 ---
 

@@ -6,7 +6,7 @@ This guide provides a step-by-step walkthrough for deploying the MeetConfirm ser
 
 In a world of complex cloud deployments, MeetConfirm demonstrates a different approach. This project is a showcase of how modern AI-assisted tools and a tightly integrated cloud ecosystem can make sophisticated, event-driven applications accessible to everyone.
 
-The deployment script, co-developed with **Gemini 1.5 Pro and Cline**, automates nearly every step, from API enablement to container deployment. It's a practical example of how AI can serve as a "DevOps engineer in a box," allowing founders and developers to focus on building products, not just managing infrastructure.
+The deployment script, co-developed with **Gemini 2.5 Pro and Cline**, automates nearly every step, from API enablement to container deployment. It's a practical example of how AI can serve as a "DevOps engineer in a box," allowing founders and developers to focus on building products, not just managing infrastructure.
 
 ## Prerequisites
 

@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
+import json
+from google.api_core import exceptions as google_exceptions
 
 from app.core.config import settings
 
@@ -19,6 +21,7 @@ class TasksService:
         self.project_id = settings.gcp_project_id
         self.location = settings.gcp_location
         self.queue_name = settings.cloud_tasks_queue
+        self.invoker_email = settings.task_invoker_email
         
         if self.project_id:
             self.parent = self.client.queue_path(
@@ -66,7 +69,10 @@ class TasksService:
                     'headers': {
                         'Content-Type': 'application/json'
                     },
-                    'body': str(payload).encode()
+                    'body': json.dumps(payload).encode(),
+                    'oidc_token': {
+                        'service_account_email': self.invoker_email
+                    }
                 },
                 'schedule_time': timestamp
             }
@@ -91,6 +97,9 @@ class TasksService:
             logger.info(f"Created task: {response.name}")
             return response.name
             
+        except google_exceptions.Conflict:
+            logger.warning(f"Task {task_name} already exists. This is expected on webhook retries.")
+            return None
         except Exception as error:
             logger.error(f"Failed to create task: {error}")
             raise

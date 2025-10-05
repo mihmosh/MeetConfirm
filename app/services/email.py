@@ -21,31 +21,21 @@ jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
 class EmailService:
     """Service for sending emails via Gmail API."""
-    
+
     def __init__(self):
         """Initialize the Email service."""
         self.credentials = self._get_credentials()
-        self.service = build('gmail', 'v1', credentials=self.credentials)
-    
+        self.service = build('gmail', 'v1', credentials=self.credentials, cache_discovery=False)
+
     def _get_credentials(self) -> Credentials:
-        """
-        Create credentials from refresh token.
+        """Create credentials from settings."""
+        creds_info = settings.google_credentials
+        if not isinstance(creds_info, dict):
+            raise TypeError("google_credentials should be a dictionary.")
         
-        Returns:
-            Google OAuth2 credentials
-        """
-        return Credentials(
-            token=None,
-            refresh_token=settings.google_refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.client_id,
-            client_secret=settings.client_secret,
-            scopes=[
-                'https://www.googleapis.com/auth/calendar',
-                'https://www.googleapis.com/auth/gmail.send'
-            ]
-        )
-    
+        creds_info.setdefault('scopes', ['https://www.googleapis.com/auth/gmail.send'])
+        return Credentials.from_authorized_user_info(creds_info)
+
     def _create_message(
         self,
         to: str,
@@ -53,103 +43,56 @@ class EmailService:
         html_body: str,
         text_body: Optional[str] = None
     ) -> dict:
-        """
-        Create an email message.
-        
-        Args:
-            to: Recipient email address
-            subject: Email subject
-            html_body: HTML body content
-            text_body: Plain text body content (optional)
-            
-        Returns:
-            Message dict ready to send
-        """
+        """Create an email message."""
         message = MIMEMultipart('alternative')
         message['To'] = to
         message['Subject'] = subject
         
-        # Add plain text version if provided
         if text_body:
-            part1 = MIMEText(text_body, 'plain')
-            message.attach(part1)
+            message.attach(MIMEText(text_body, 'plain'))
+        message.attach(MIMEText(html_body, 'html'))
         
-        # Add HTML version
-        part2 = MIMEText(html_body, 'html')
-        message.attach(part2)
-        
-        # Encode message
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        
         return {'raw': raw}
-    
+
     def send_confirmation_email(
         self,
         to_email: str,
         event_title: str,
         event_start: str,
         event_end: str,
+        attendees: list,
+        calendar_link: str,
         confirmation_url: str,
+        cancellation_url: str,
         timezone: str
-    ) -> bool:
-        """
-        Send a confirmation request email.
-        
-        Args:
-            to_email: Recipient email
-            event_title: Title of the event
-            event_start: Event start time (formatted string)
-            event_end: Event end time (formatted string)
-            confirmation_url: URL for confirmation
-            timezone: Event timezone
-            
-        Returns:
-            True if sent successfully
-        """
+    ):
+        """Send a confirmation request email."""
         try:
-            # Render template
             template = jinja_env.get_template('confirm_email.html')
             html_body = template.render(
                 event_title=event_title,
                 event_start=event_start,
                 event_end=event_end,
+                attendees=attendees,
+                calendar_link=calendar_link,
                 confirmation_url=confirmation_url,
+                cancellation_url=cancellation_url,
                 timezone=timezone
             )
             
-            # Plain text fallback
-            text_body = f"""
-Please confirm your appointment:
-
-{event_title}
-{event_start} - {event_end} ({timezone})
-
-To confirm, please click this link:
-{confirmation_url}
-
-If you don't confirm within the next hour, your appointment will be automatically cancelled.
-"""
-            
-            # Create and send message
             message = self._create_message(
                 to=to_email,
                 subject=f"Please confirm: {event_title}",
-                html_body=html_body,
-                text_body=text_body
+                html_body=html_body
             )
             
-            self.service.users().messages().send(
-                userId='me',
-                body=message
-            ).execute()
-            
+            self.service.users().messages().send(userId='me', body=message).execute()
             logger.info(f"Confirmation email sent to {to_email}")
-            return True
-            
         except HttpError as error:
-            logger.error(f"Failed to send confirmation email: {error}")
+            logger.error(f"Failed to send confirmation email to {to_email}: {error}", exc_info=True)
             raise
-    
+
     def send_cancellation_email(
         self,
         to_email: str,
@@ -158,23 +101,9 @@ If you don't confirm within the next hour, your appointment will be automaticall
         event_end: str,
         timezone: str,
         reschedule_url: Optional[str] = None
-    ) -> bool:
-        """
-        Send a cancellation notice email.
-        
-        Args:
-            to_email: Recipient email
-            event_title: Title of the event
-            event_start: Event start time (formatted string)
-            event_end: Event end time (formatted string)
-            timezone: Event timezone
-            reschedule_url: Optional URL to reschedule
-            
-        Returns:
-            True if sent successfully
-        """
+    ):
+        """Send a cancellation notice email."""
         try:
-            # Render template
             template = jinja_env.get_template('cancel_email.html')
             html_body = template.render(
                 event_title=event_title,
@@ -184,41 +113,32 @@ If you don't confirm within the next hour, your appointment will be automaticall
                 reschedule_url=reschedule_url
             )
             
-            # Plain text fallback
-            text_body = f"""
-Your appointment has been cancelled:
-
-{event_title}
-{event_start} - {event_end} ({timezone})
-
-We didn't receive your confirmation in time, so this time slot has been freed.
-
-"""
-            if reschedule_url:
-                text_body += f"You can book a new appointment here: {reschedule_url}\n"
-            
-            text_body += "\nThank you for your understanding."
-            
-            # Create and send message
             message = self._create_message(
                 to=to_email,
                 subject=f"Appointment cancelled: {event_title}",
-                html_body=html_body,
-                text_body=text_body
+                html_body=html_body
             )
             
-            self.service.users().messages().send(
-                userId='me',
-                body=message
-            ).execute()
-            
+            self.service.users().messages().send(userId='me', body=message).execute()
             logger.info(f"Cancellation email sent to {to_email}")
-            return True
-            
         except HttpError as error:
-            logger.error(f"Failed to send cancellation email: {error}")
+            logger.error(f"Failed to send cancellation email to {to_email}: {error}", exc_info=True)
             raise
 
+    def send_email(self, to_email: str, subject: str, html_content: str):
+        """Send a generic email."""
+        try:
+            message = self._create_message(
+                to=to_email,
+                subject=subject,
+                html_body=html_content
+            )
+            self.service.users().messages().send(userId='me', body=message).execute()
+            logger.info(f"Email sent to {to_email}")
+            return True
+        except HttpError as error:
+            logger.error(f"Failed to send email to {to_email}: {error}", exc_info=True)
+            return False
 
 # Global instance
 email_service = EmailService()

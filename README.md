@@ -1,149 +1,77 @@
-# MeetConfirm: Automated Meeting Confirmation System
+# MeetConfirm
 
-MeetConfirm is the final link between your booking page and your inbox. It solves the no-show problem without relying on a third-party SaaS: everything runs in your own GCP infrastructure, giving you full control.
+**MeetConfirm is a personal, cost-free service for automatically confirming meetings scheduled via Google Calendar and notifying through Gmail.**
 
-This lightweight, open-source tool automatically confirms or cancels meetings booked through a public Google Calendar appointment page. It helps reduce no-shows by sending a confirmation email before the meeting and automatically canceling it if no confirmation is received.
+It was created as a practical tool for founders and product teams who use tools like Firebase In-App Messaging to schedule user interviews and demos. As Sam Altman might describe it, MeetConfirm is like "fast fashion SaaS": simple, useful, and nearly cost-free to operate.
 
-**License:** MIT
+### Onboarding and Confirmation Flow
 
-## 🎯 Use Case
+| Welcome Email | Confirmation Request |
+| :---: | :---: |
+| ![Welcome Email](images/intro%20email.png) | ![Confirmation Email](images/confirmation%20email.png) |
 
-**Problem:** When you use a public Google Calendar link for mass bookings (e.g., for user interviews, sales calls, or consultations), a significant percentage of people may not show up. This leads to wasted time and lost opportunities.
+## Feature Highlights
 
-**Solution:** MeetConfirm acts as a personal, automated assistant for your Google Calendar. It monitors your calendar for new meetings that match a specific keyword (e.g., "HeartScan", "Consulting Call").
+*   **Automated Confirmations & Cancellations:** Automatically sends confirmation emails and cancels meetings that are not confirmed, freeing up your calendar.
+*   **Deep Google Cloud Integration:** A showcase of vertical integration using Cloud Run, Cloud Tasks, Secret Manager, Firestore, Google Calendar, and Gmail.
+*   **15-Minute Deployment:** Get up and running quickly with a single script. No complex YAML or DevOps experience required.
+*   **Open Source:** MIT licensed and fully transparent.
 
--   **T-2 Hours:** It sends a polite email to the attendee asking them to confirm their attendance with a single click.
--   **T-1 Hour:** If the meeting is not confirmed, MeetConfirm automatically removes the event from your calendar and sends a cancellation notice to the attendee, freeing up your time.
+## Use Case
 
-## 🚀 Vertical Integration
+MeetConfirm is designed to automate the final step of a user booking workflow, especially common in product development and user research:
 
-The project fits into a larger ecosystem, automating the final step of the booking process:
+1.  **Firebase In-App Messaging:** A user receives an in-app message with an invitation to book a meeting.
+2.  **Google Calendar:** The user books a slot directly in your Google Calendar.
+3.  **MeetConfirm:** The service detects the new event, schedules a confirmation email to be sent 2 hours before the meeting, and a cancellation task to run 1 hour before.
+4.  **Gmail:** The user receives a confirmation email with a one-click confirmation link. If they don't confirm, the event is automatically deleted.
 
-**Google Play Market (or any app store) → Firebase (or any backend) → Google Calendar → MeetConfirm → Gmail**
+This entire process runs in the background, with no UI to manage.
 
-## 🏗️ Architecture
+## Google Architecture Overview
 
-MeetConfirm is built with Python (FastAPI) and runs as a single container on Google Cloud Run.
-
-### Data Flow Diagram
+The project demonstrates a simple, powerful, vertically-integrated scenario on a single cloud stack.
 
 ```mermaid
 graph TD
-    A[User] -- Books Slot --> B(Google Calendar);
-    B -- Webhook/Sync --> C{MeetConfirm};
-    C -- Event Matches Keyword? --> D{Save to DB & Schedule Tasks};
-    D -- T-2h --> E[Send Confirmation Email via Gmail];
-    A -- Clicks Link --> F[Confirm Endpoint];
-    F -- Update Status --> D;
-    D -- T-1h & Status is 'pending' --> G[Cancel Event in Calendar];
-    G -- Send Cancellation --> H[Send Cancellation Email via Gmail];
+    A[Firebase In-App Messaging] -->|User books slot| B(Google Calendar);
+    B -->|Webhook notification| C{MeetConfirm on Cloud Run};
+    C -->|Stores event state| D[Firestore];
+    C -->|Schedules tasks| E[Cloud Tasks];
+    E -->|Triggers email task| C;
+    C -->|Sends confirmation| F(Gmail);
 ```
 
-### Components
+## Economic Model
 
--   **Cloud Run:** Hosts the main FastAPI application which handles all logic.
--   **Cloud SQL (Postgres):** Stores event information and status.
--   **Cloud Tasks:** Schedules confirmation and cancellation emails.
--   **Secret Manager:** Securely stores your Google OAuth credentials.
--   **Google Calendar & Gmail APIs:** To watch for events and send notifications.
+MeetConfirm is designed to be virtually free for most real-world scenarios by leveraging the generous free tiers of Google Cloud services.
 
-## 📦 Getting Started: 15-Minute Deployment
+| Service          | Free Tier Limit        | Approx. Daily Capacity (Free) |
+| ---------------- | ---------------------- | ----------------------------- |
+| Cloud Run        | 2,000,000 reqs/month   | ~66,000 requests/day          |
+| Firestore        | 50,000 reads/day       | ~6,000 bookings/day           |
+| Cloud Tasks      | 500,000 tasks/month    | ~16,000 tasks/day             |
+| Gmail API        | 2,000 emails/day (user)| 2,000 confirmations/day       |
+| Calendar API     | 1,000,000 reqs/day     | Ample headroom                |
+| Secret Manager   | 10,000 ops/month       | Ample headroom                |
 
-### Prerequisites
+**Estimated Costs:**
+*   **≤ 1,000 meetings/day:** ≈ $0
+*   **10,000 meetings/day:** < $10/month
 
-1.  A Google Cloud Platform (GCP) project with billing enabled.
-2.  `gcloud` CLI installed and authenticated (`gcloud auth login`).
-3.  A public Google Calendar appointment scheduling page.
-    *Example of a public booking page:*
-    *![Google Calendar Appointment Page](placeholder_for_screenshot.png)* 
-    *(You will need to replace this with your own screenshot)*
+## Stack Summary
 
-### Step 1: Clone the Repository
+| Component        | Purpose                               | Free Tier        | Notes                                     |
+| ---------------- | ------------------------------------- | ---------------- | ----------------------------------------- |
+| **Cloud Run**    | Core FastAPI application             | 2M reqs/mo       | Handles API endpoints and webhooks.       |
+| **Firestore**    | Store event state (pending/confirmed) | 50k reads/day    | Simple, scalable, and cost-effective.     |
+| **Cloud Tasks**  | Scheduler for delayed actions         | 500k tasks/mo    | Used for confirmation and cancellation timers. |
+| **Gmail API**    | Send confirmation emails              | 2k/day per user  | Easily extendable with other email providers. |
+| **Calendar API** | Watch for new events and cancel them  | 1M reqs/day      | The core of the event detection system.   |
+| **Secret Manager**| Securely store credentials          | 10k ops/mo       | Manages OAuth tokens and signing keys.    |
 
-```bash
-git clone https://github.com/mihmosh/MeetConfirm.git
-cd MeetConfirm
-```
+---
 
-### Step 2: Run the Deployment Script
-
-The interactive script handles the entire setup.
-
-**For Windows (PowerShell):**
-```powershell
-./scripts/deploy.ps1
-```
-
-**For Linux/macOS:**
-```bash
-chmod +x scripts/deploy.sh
-./scripts/deploy.sh
-```
-
-The script will automatically guide you through:
-1.  Project configuration and API enablement.
-2.  OAuth credential creation (a one-time manual step in your browser).
-3.  Secure storage of all secrets.
-4.  Database and task queue creation.
-5.  Building and deploying the application.
-6.  Final setup of the calendar watch.
-
-## 🔧 Configuration
-
-The application is configured via environment variables and secrets passed during the deployment script:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `EVENT_TITLE_KEYWORD` | Keyword to filter calendar events | Required |
-| `TIMEZONE` | Your local timezone | `UTC` |
-| `SERVICE_URL` | Your Cloud Run service URL | Required |
-| `GOOGLE_CREDENTIALS` | JSON with client_id, client_secret, and refresh_token (from Secret Manager) | Required |
-| `DB_PASSWORD` | Password for the Cloud SQL user (from Secret Manager) | Required |
-| `TOKEN_SIGNING_KEY` | HMAC key for confirmation tokens (from Secret Manager) | Required |
-
-## 📊 Monitoring & Metrics
-
-### Health Check
-
-A simple endpoint to verify the service is running.
-```bash
-curl https://your-service-url.run.app/api/v1/healthz
-```
-
-### Metrics Endpoint
-
-This endpoint provides key statistics in JSON format, ready for integration with monitoring systems like Prometheus or Grafana.
-```bash
-curl https://your-service-url.run.app/api/v1/metrics
-```
-
-### Logs
-
-View real-time application logs:
-```bash
-gcloud run logs read --service meetconfirm --region us-central1 --limit 100 --project YOUR_PROJECT_ID
-```
-
-## 💰 Cost Estimate
-
-For typical usage (10-50 meetings per month):
-
-- **Cloud Run:** ~$0-5/month (generous free tier)
-- **Cloud SQL:** ~$7-10/month (db-f1-micro instance)
-- **Total:** **~$7-15/month**
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📧 Contact
-
-**Maintainer:** Michal Barodkin  
-**Email:** michal.b@heartscan.app  
-**Company:** Blatt sp. z o.o. (Warsaw, Poland)  
-**LinkedIn:** https://www.linkedin.com/in/michal-barodkin/
+**Maintainer:** Michal Barodkin (Blatt sp. z o.o., Warsaw)  
+**Contact:** michal.b@heartscan.app  
+*Built with Gemini 2.5 Pro + Cline (AI-assisted coding)*

@@ -1,0 +1,7 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/meetconfirm/meetconfirm:latest', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/meetconfirm/meetconfirm:latest']
+images:
+- '${_REGION}-docker.pkg.dev/${PROJECT_ID}/meetconfirm/meetconfirm:latest'

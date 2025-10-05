@@ -45,6 +45,19 @@
             margin: 10px 0;
             color: #5f6368;
         }
+        .attendees-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .attendees-list li {
+            display: inline-block;
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            padding: 5px 10px;
+            border-radius: 15px;
+            margin-right: 5px;
+            font-size: 14px;
+        }
         .warning {
             background-color: #fff3cd;
             border-left: 4px solid #ff9800;
@@ -55,18 +68,26 @@
         }
         .cta-button {
             display: inline-block;
-            background-color: #1a73e8;
             color: #ffffff !important;
             text-decoration: none;
-            padding: 14px 32px;
+            padding: 14px 28px;
             border-radius: 4px;
             font-weight: 600;
             text-align: center;
-            margin: 20px 0;
+            margin: 10px 5px;
             font-size: 16px;
         }
-        .cta-button:hover {
+        .confirm-button {
+            background-color: #1a73e8;
+        }
+        .confirm-button:hover {
             background-color: #1557b0;
+        }
+        .cancel-button {
+            background-color: #d93025;
+        }
+        .cancel-button:hover {
+            background-color: #a52714;
         }
         .button-container {
             text-align: center;
@@ -96,6 +117,17 @@
                 {{ event_start }} - {{ event_end }}<br>
                 {{ timezone }}
             </div>
+            <div class="event-info">
+                <strong>👥 Attendees:</strong><br>
+                <ul class="attendees-list">
+                    {% for attendee in attendees %}
+                        <li>{{ attendee }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="event-info">
+                <a href="{{ calendar_link }}" target="_blank">Manage event in Google Calendar</a>
+            </div>
         </div>
         
         <div class="warning">
@@ -104,8 +136,11 @@
         </div>
         
         <div class="button-container">
-            <a href="{{ confirmation_url }}" class="cta-button">
+            <a href="{{ confirmation_url }}" class="cta-button confirm-button">
                 ✓ Confirm My Appointment
+            </a>
+            <a href="{{ cancellation_url }}" class="cta-button cancel-button">
+                ✗ Cancel Appointment
             </a>
         </div>
         
@@ -114,7 +149,7 @@
         </p>
         
         <div class="footer">
-            <p>If you're unable to attend, please simply ignore this email and the appointment will be cancelled automatically.</p>
+            <p>If you need to cancel, you can do so using the button above. Otherwise, if you're unable to attend, please simply ignore this email and the appointment will be cancelled automatically.</p>
             <p style="font-size: 12px; color: #80868b;">
                 This is an automated message. Please do not reply to this email.
             </p>

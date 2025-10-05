@@ -1,20 +1,18 @@
-"""API v1 endpoints."""
+"""API v1 endpoints for MeetConfirm, using Firestore as the backend."""
 import logging
 import hmac
 import hashlib
+import json
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-import pytz
 from jinja2 import Environment, FileSystemLoader
 import os
+from google.cloud import firestore
+from google.api_core import exceptions as google_exceptions
 
 from app.core.config import settings
-from app.db.session import get_db
-from app.db.models import Event, Notification, AuditLog
 from app.services.calendar import calendar_service
 from app.services.email import email_service
 from app.services.tasks import tasks_service
@@ -22,372 +20,309 @@ from app.services.tasks import tasks_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Setup Jinja2
+# Initialize Firestore client
+db = firestore.AsyncClient(project=settings.firestore_project_id)
+
+# Setup Jinja2 for HTML templates
 template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'templates')
 jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
 
-def generate_token(event_id: int, calendar_event_id: str) -> str:
-    """Generate HMAC token for confirmation."""
-    message = f"{event_id}:{calendar_event_id}".encode()
-    signature = hmac.new(
-        settings.token_signing_key.encode(),
-        message,
-        hashlib.sha256
-    ).hexdigest()
+def generate_token(event_id: str) -> str:
+    """Generate HMAC token for confirmation using the event ID."""
+    message = event_id.encode()
+    signature = hmac.new(settings.token_signing_key.encode(), message, hashlib.sha256).hexdigest()
     return signature
 
 
-def verify_token(token: str, event_id: int, calendar_event_id: str) -> bool:
+def verify_token(token: str, event_id: str) -> bool:
     """Verify HMAC token."""
-    expected = generate_token(event_id, calendar_event_id)
-    return hmac.compare_digest(token, expected)
-
-
-@router.get("/healthz")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    expected_token = generate_token(event_id)
+    return hmac.compare_digest(token, expected_token)
 
 
 @router.post("/webhook/calendar")
-async def calendar_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Receive webhook notifications from Google Calendar.
-    """
-    try:
-        # Verify webhook headers
-        resource_id = request.headers.get('X-Goog-Resource-ID')
-        resource_state = request.headers.get('X-Goog-Resource-State')
-        channel_id = request.headers.get('X-Goog-Channel-ID')
-        
-        logger.info(f"Calendar webhook: state={resource_state}, channel={channel_id}")
-        
-        # Trigger sync in the background (in production, use Cloud Tasks)
-        # For now, we'll do a simple sync
-        await process_calendar_changes(db)
-        
-        return {"status": "received"}
-        
-    except Exception as e:
-        logger.error(f"Error processing calendar webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def calendar_webhook(request: Request):
+    """Receive and process webhook notifications from Google Calendar."""
+    resource_state = request.headers.get('X-Goog-Resource-State')
+    logger.info(f"Calendar webhook received: state={resource_state}")
+
+    if resource_state == 'sync':
+        # Initial sync, do nothing, let the periodic sync handle it.
+        return {"status": "sync_received"}
+
+    await process_calendar_changes()
+    return {"status": "changes_processed"}
 
 
-async def process_calendar_changes(db: Session):
-    """Process calendar changes and update database."""
+async def process_calendar_changes():
+    """Fetch calendar changes and update Firestore."""
     try:
-        # Get upcoming events (next 30 days)
-        time_min = datetime.utcnow()
-        time_max = time_min + timedelta(days=30)
-        
-        events = calendar_service.list_events(time_min=time_min, time_max=time_max)
-        
-        for event in events:
-            # Check if this event should be processed
-            if not calendar_service.should_process_event(event):
+        state_ref = db.collection("state").document("calendar")
+        state_doc = await state_ref.get()
+        sync_token = state_doc.to_dict().get("sync_token") if state_doc.exists else None
+
+        events, next_sync_token = calendar_service.list_changed_events(sync_token)
+        logger.info(f"Found {len(events)} changed events.")
+
+        for event_data in events:
+            event_id = event_data['id']
+            event_ref = db.collection("bookings").document(event_id)
+
+            if event_data.get("status") == "cancelled":
+                await event_ref.delete()
+                logger.info(f"Deleted cancelled event: {event_id}")
                 continue
-            
-            # Extract event details
-            calendar_event_id = event['id']
-            summary = event.get('summary', 'Untitled Event')
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            end = event['end'].get('dateTime', event['end'].get('date'))
-            organizer_email = event.get('creator', {}).get('email', '')
-            attendee_email = calendar_service.get_attendee_email(event)
-            
+
+            if not calendar_service.should_process_event(event_data):
+                continue
+
+            attendee_email = calendar_service.get_attendee_email(event_data)
             if not attendee_email:
-                logger.warning(f"No attendee found for event {calendar_event_id}")
                 continue
+
+            start_time_str = event_data['start'].get('dateTime', event_data['start'].get('date'))
+            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
             
-            # Parse times
-            start_time = datetime.fromisoformat(start.replace('Z', '+00:00'))
-            end_time = datetime.fromisoformat(end.replace('Z', '+00:00'))
-            
-            # Check if event already exists
-            existing_event = db.query(Event).filter(
-                Event.calendar_event_id == calendar_event_id
-            ).first()
-            
-            if existing_event:
-                # Update if needed
-                if existing_event.status == 'pending':
-                    existing_event.start_time_utc = start_time
-                    existing_event.end_time_utc = end_time
-                    db.commit()
-                continue
-            
-            # Calculate timings
-            confirm_send_time = start_time - timedelta(hours=settings.confirm_send_hours)
             confirm_deadline = start_time - timedelta(hours=settings.confirm_deadline_hours)
-            
-            # Skip if event is too soon
-            now = datetime.utcnow().replace(tzinfo=pytz.UTC)
-            if confirm_deadline < now:
-                logger.info(f"Event {calendar_event_id} too soon, skipping")
+            if confirm_deadline < datetime.utcnow().astimezone():
+                logger.info(f"Event {event_id} is too soon to process, skipping.")
                 continue
+
+            booking_data = {
+                "attendee_email": attendee_email,
+                "start_time": start_time,
+                "status": "pending",
+                "updated_at": firestore.SERVER_TIMESTAMP
+            }
+            await event_ref.set(booking_data, merge=True)
+            logger.info(f"Upserted booking for event: {event_id}")
+
+            # Schedule tasks for email sending and enforcement
+            send_time = start_time - timedelta(hours=settings.confirm_send_hours)
+            enforce_time = start_time - timedelta(hours=settings.confirm_deadline_hours)
             
-            # Create new event record
-            token_hash = generate_token(0, calendar_event_id)  # Will update with real ID
-            
-            new_event = Event(
-                calendar_event_id=calendar_event_id,
-                organizer_email=organizer_email,
-                attendee_email=attendee_email,
-                start_time_utc=start_time,
-                end_time_utc=end_time,
-                timezone=settings.timezone,
-                status='pending',
-                confirm_token_hash=token_hash,
-                confirm_deadline_utc=confirm_deadline
-            )
-            
-            db.add(new_event)
-            db.flush()  # Get the ID
-            
-            # Update token with real ID
-            new_event.confirm_token_hash = generate_token(new_event.id, calendar_event_id)
-            db.commit()
-            
-            # Schedule tasks
-            if confirm_send_time > now:
-                tasks_service.schedule_confirmation_email(new_event.id, confirm_send_time)
-            else:
-                # Send immediately if past send time
-                await send_confirmation_email(new_event.id, db)
-            
-            tasks_service.schedule_enforcement(new_event.id, confirm_deadline)
-            
-            # Log
-            audit = AuditLog(
-                event_id=new_event.id,
-                action='event_created',
-                detail={'calendar_event_id': calendar_event_id}
-            )
-            db.add(audit)
-            db.commit()
-            
-            logger.info(f"Created event {new_event.id} for {calendar_event_id}")
-            
+            try:
+                tasks_service.schedule_confirmation_email(event_id, send_time)
+                tasks_service.schedule_enforcement(event_id, enforce_time)
+            except google_exceptions.Conflict:
+                logger.info(f"Tasks for event {event_id} already exist. Skipping creation.")
+                pass  # This is expected if the webhook is delivered more than once
+            except Exception as e:
+                logger.error(f"Failed to schedule tasks for event {event_id}: {e}", exc_info=True)
+                # Re-raising is important, but we need to decide if this should fail the whole process
+                # For now, we let it fail to be aware of unexpected errors.
+                raise
+
+        await state_ref.set({"sync_token": next_sync_token})
+        logger.info("Successfully updated sync token.")
+
     except Exception as e:
-        logger.error(f"Error processing calendar changes: {e}")
-        raise
+        logger.error(f"Error processing calendar changes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to process calendar changes.")
 
 
-@router.get("/confirm")
-async def confirm_appointment(token: str, event_id: int, db: Session = Depends(get_db)):
-    """
-    Public endpoint for attendees to confirm their appointment.
-    """
+@router.get("/confirm", response_class=HTMLResponse)
+async def confirm_appointment(token: str, event_id: str):
+    """Public endpoint for attendees to confirm their appointment."""
+    if not verify_token(token, event_id):
+        raise HTTPException(status_code=403, detail="Invalid or expired token.")
+
     try:
-        # Get event
-        event = db.query(Event).filter(Event.id == event_id).first()
-        
-        if not event:
-            raise HTTPException(status_code=404, detail="Event not found")
-        
-        # Verify token
-        if not verify_token(token, event.id, event.calendar_event_id):
-            raise HTTPException(status_code=403, detail="Invalid token")
-        
-        # Check if already confirmed
-        if event.status == 'confirmed':
-            # Return success page anyway
-            pass
-        elif event.status == 'cancelled':
-            raise HTTPException(status_code=410, detail="Event was cancelled")
-        else:
-            # Update status
-            event.status = 'confirmed'
-            event.updated_at = datetime.utcnow()
-            
-            # Log
-            audit = AuditLog(
-                event_id=event.id,
-                action='event_confirmed',
-                detail={'confirmed_at': datetime.utcnow().isoformat()}
-            )
-            db.add(audit)
-            db.commit()
-            
-            logger.info(f"Event {event.id} confirmed")
-        
-        # Render confirmation page
+        event_ref = db.collection("bookings").document(event_id)
+        event_doc = await event_ref.get()
+
+        if not event_doc.exists:
+            raise HTTPException(status_code=404, detail="Event not found.")
+
+        event_data = event_doc.to_dict()
+        if event_data.get("status") == "cancelled":
+            raise HTTPException(status_code=410, detail="This event has been cancelled.")
+
+        await event_ref.update({"status": "confirmed", "updated_at": firestore.SERVER_TIMESTAMP})
+        logger.info(f"Event {event_id} confirmed by attendee.")
+
         template = jinja_env.get_template('confirmation_page.html')
+        # Note: For a better user experience, fetch fresh event details here.
         html_content = template.render(
-            event_title=event.calendar_event_id,  # Could fetch from Calendar API
-            event_start=event.start_time_utc.strftime('%B %d, %Y at %I:%M %p'),
-            event_end=event.end_time_utc.strftime('%I:%M %p'),
-            timezone=event.timezone,
-            meet_link=None  # Could fetch from Calendar API
+            event_title=f"Appointment {event_id}",
+            event_start=event_data.get("start_time").strftime('%B %d, %Y at %I:%M %p UTC')
         )
-        
         return HTMLResponse(content=html_content)
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error confirming appointment: {e}")
+        logger.error(f"Error confirming appointment for event {event_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not confirm appointment.")
+
+
+@router.get("/cancel", response_class=HTMLResponse)
+async def cancel_appointment(token: str, event_id: str):
+    """Public endpoint for attendees to cancel their appointment."""
+    if not verify_token(token, event_id):
+        raise HTTPException(status_code=403, detail="Invalid or expired token.")
+
+    try:
+        event_ref = db.collection("bookings").document(event_id)
+        event_doc = await event_ref.get()
+
+        if not event_doc.exists:
+            raise HTTPException(status_code=404, detail="Event not found.")
+
+        # Delete from Google Calendar
+        try:
+            calendar_service.delete_event(event_id)
+            logger.info(f"Event {event_id} cancelled by attendee via link.")
+        except Exception as e:
+            # If the event is already gone, that's fine.
+            logger.warning(f"Could not delete event {event_id} from calendar (maybe already deleted): {e}")
+
+        # Update Firestore status
+        await event_ref.update({"status": "cancelled_by_user", "updated_at": firestore.SERVER_TIMESTAMP})
+
+        template = jinja_env.get_template('cancellation_page.html')
+        html_content = template.render(event_id=event_id)
+        return HTMLResponse(content=html_content)
+
+    except Exception as e:
+        logger.error(f"Error cancelling appointment for event {event_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not cancel appointment.")
+
+
+@router.post("/onboarding/run-test")
+async def run_onboarding_test():
+    """
+    Sends a welcome email and creates a test event in the user's calendar.
+    """
+    try:
+        # Get user's email from their profile
+        user_profile = email_service.service.users().getProfile(userId="me").execute()
+        user_email = user_profile.get("emailAddress")
+        if not user_email:
+            raise HTTPException(status_code=500, detail="Could not retrieve user's email address.")
+
+        # Send welcome email
+        template = jinja_env.get_template('onboarding_welcome.html')
+        html_content = template.render()
+        email_service.send_email(
+            to_email=user_email,
+            subject="Welcome to MeetConfirm!",
+            html_content=html_content
+        )
+        logger.info(f"Sent onboarding welcome email to {user_email}")
+
+        # Create a test event
+        event_details = {
+            'summary': f'{settings.event_title_keyword} - Test Event',
+            'description': 'This is a test event created by MeetConfirm to demonstrate its functionality.',
+            'start': {
+                'dateTime': (datetime.utcnow() + timedelta(hours=2, minutes=3)).isoformat() + 'Z',
+                'timeZone': 'UTC',
+            },
+            'end': {
+                'dateTime': (datetime.utcnow() + timedelta(hours=3, minutes=3)).isoformat() + 'Z',
+                'timeZone': 'UTC',
+            },
+            'attendees': [
+                {'email': user_email},
+            ],
+        }
+        created_event = calendar_service.service.events().insert(calendarId='primary', body=event_details).execute()
+        logger.info(f"Created test event: {created_event.get('id')}")
+
+        return {"status": "success", "message": "Onboarding test initiated."}
+
+    except Exception as e:
+        logger.error(f"Error running onboarding test: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/tasks/send-confirm/{event_id}")
-async def send_confirmation_email(event_id: int, db: Session = Depends(get_db)):
-    """
-    Cloud Task endpoint to send confirmation email.
-    """
+async def task_send_confirmation(event_id: str):
+    """Task handler to send a confirmation email."""
+    event_ref = db.collection("bookings").document(event_id)
+    event_doc = await event_ref.get()
+    if not event_doc.exists:
+        logger.warning(f"Task send-confirm: Event {event_id} not found in Firestore.")
+        return {"status": "not_found"}
+
+    booking = event_doc.to_dict()
+    if booking["status"] != "pending":
+        logger.info(f"Task send-confirm: Event {event_id} is not pending, skipping.")
+        return {"status": "skipped"}
+
+    # Fetch full event details from Google Calendar for a richer email
     try:
-        event = db.query(Event).filter(Event.id == event_id).first()
-        
-        if not event:
-            logger.warning(f"Event {event_id} not found")
-            return {"status": "not_found"}
-        
-        if event.status != 'pending':
-            logger.info(f"Event {event_id} already {event.status}")
-            return {"status": "already_processed"}
-        
-        # Generate confirmation URL
-        token = event.confirm_token_hash
-        confirmation_url = f"{settings.service_url}/confirm?token={token}&event_id={event.id}"
-        
-        # Send email
-        email_service.send_confirmation_email(
-            to_email=event.attendee_email,
-            event_title=event.calendar_event_id,
-            event_start=event.start_time_utc.strftime('%B %d, %Y at %I:%M %p'),
-            event_end=event.end_time_utc.strftime('%I:%M %p'),
-            confirmation_url=confirmation_url,
-            timezone=event.timezone
-        )
-        
-        # Record notification
-        notification = Notification(
-            event_id=event.id,
-            kind='confirm_request',
-            channel='email',
-            meta={'to': event.attendee_email}
-        )
-        db.add(notification)
-        db.commit()
-        
-        logger.info(f"Confirmation email sent for event {event_id}")
-        return {"status": "sent"}
-        
+        event_data = calendar_service.get_event(event_id)
+        if not event_data:
+            logger.error(f"Task send-confirm: Could not retrieve event {event_id} from Google Calendar.")
+            return {"status": "event_not_found_in_calendar"}
     except Exception as e:
-        logger.error(f"Error sending confirmation email: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Task send-confirm: Error fetching event {event_id} from calendar: {e}", exc_info=True)
+        return {"status": "calendar_api_error"}
+
+    attendees = [att.get('email') for att in event_data.get('attendees', [])]
+    
+    confirmation_url = f"{settings.service_url}/api/v1/confirm?token={generate_token(event_id)}&event_id={event_id}"
+    cancellation_url = f"{settings.service_url}/api/v1/cancel?token={generate_token(event_id)}&event_id={event_id}"
+
+    email_service.send_confirmation_email(
+        to_email=booking["attendee_email"],
+        event_title=event_data.get('summary', 'Your Appointment'),
+        event_start=booking["start_time"].strftime('%B %d, %Y at %I:%M %p UTC'),
+        event_end="",  # Placeholder, can be fetched from event_data if needed
+        attendees=attendees,
+        calendar_link=event_data.get('htmlLink', ''),
+        confirmation_url=confirmation_url,
+        cancellation_url=cancellation_url,
+        timezone=settings.timezone
+    )
+    
+    await event_ref.update({"status": "confirmation_sent"})
+    return {"status": "success"}
 
 
 @router.post("/tasks/enforce/{event_id}")
-async def enforce_confirmation(event_id: int, db: Session = Depends(get_db)):
-    """
-    Cloud Task endpoint to enforce confirmation deadline.
-    """
-    try:
-        event = db.query(Event).filter(Event.id == event_id).first()
-        
-        if not event:
-            logger.warning(f"Event {event_id} not found")
-            return {"status": "not_found"}
-        
-        if event.status == 'confirmed':
-            logger.info(f"Event {event_id} was confirmed")
-            return {"status": "confirmed"}
-        
-        if event.status == 'cancelled':
-            logger.info(f"Event {event_id} already cancelled")
-            return {"status": "already_cancelled"}
-        
-        # Cancel the event
-        event.status = 'cancelled'
-        event.updated_at = datetime.utcnow()
-        
-        # Delete from calendar
-        calendar_service.delete_event(event.calendar_event_id)
-        
-        # Send cancellation email
-        email_service.send_cancellation_email(
-            to_email=event.attendee_email,
-            event_title=event.calendar_event_id,
-            event_start=event.start_time_utc.strftime('%B %d, %Y at %I:%M %p'),
-            event_end=event.end_time_utc.strftime('%I:%M %p'),
-            timezone=event.timezone,
-            reschedule_url=None  # Could add booking page URL here
-        )
-        
-        # Record notification
-        notification = Notification(
-            event_id=event.id,
-            kind='cancel_notice',
-            channel='email',
-            meta={'to': event.attendee_email, 'reason': 'no_confirmation'}
-        )
-        db.add(notification)
-        
-        # Log
-        audit = AuditLog(
-            event_id=event.id,
-            action='event_cancelled',
-            detail={'reason': 'no_confirmation', 'deadline': event.confirm_deadline_utc.isoformat()}
-        )
-        db.add(audit)
-        db.commit()
-        
-        logger.info(f"Event {event_id} cancelled due to no confirmation")
-        return {"status": "cancelled"}
-        
-    except Exception as e:
-        logger.error(f"Error enforcing confirmation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def task_enforce_confirmation(event_id: str):
+    """Task handler to enforce the confirmation deadline."""
+    event_ref = db.collection("bookings").document(event_id)
+    event_doc = await event_ref.get()
+    if not event_doc.exists:
+        logger.warning(f"Task enforce: Event {event_id} not found in Firestore.")
+        return {"status": "not_found"}
 
+    booking = event_doc.to_dict()
+    if booking["status"] == "confirmed":
+        logger.info(f"Task enforce: Event {event_id} is already confirmed.")
+        return {"status": "confirmed"}
 
-@router.get("/metrics")
-async def get_metrics(db: Session = Depends(get_db)):
-    """
-    Get system metrics.
-    """
-    try:
-        total_events = db.query(Event).count()
-        confirmed = db.query(Event).filter(Event.status == 'confirmed').count()
-        cancelled = db.query(Event).filter(Event.status == 'cancelled').count()
-        pending = db.query(Event).filter(Event.status == 'pending').count()
-        
-        confirm_rate = (confirmed / total_events * 100) if total_events > 0 else 0
-        cancel_rate = (cancelled / total_events * 100) if total_events > 0 else 0
-        
-        return {
-            "total_events": total_events,
-            "confirmed": confirmed,
-            "cancelled": cancelled,
-            "pending": pending,
-            "confirm_rate_percent": round(confirm_rate, 2),
-            "cancel_rate_percent": round(cancel_rate, 2),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting metrics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    if booking["status"] == "confirmation_sent":
+        logger.info(f"Task enforce: Event {event_id} was not confirmed in time. Cancelling.")
+        calendar_service.delete_event(event_id)
+        await event_ref.update({"status": "cancelled_by_system"})
+        # Optionally send a cancellation email
+    
+    return {"status": "enforced"}
 
 
 @router.post("/setup-calendar-watch")
 async def setup_calendar_watch():
-    """
-    Setup Google Calendar push notifications.
-    """
+    """Set up Google Calendar push notifications (webhook)."""
     try:
         webhook_url = f"{settings.service_url}/api/v1/webhook/calendar"
         watch_info = calendar_service.setup_watch(webhook_url)
         
-        logger.info(f"Calendar watch setup: {watch_info}")
-        return {
-            "status": "success",
-            "watch_id": watch_info.get('id'),
-            "resource_id": watch_info.get('resourceId'),
-            "expiration": watch_info.get('expiration')
-        }
-        
+        channel_id = watch_info.get('id')
+        if not channel_id:
+            raise Exception("Failed to get channel ID from Google.")
+
+        state_ref = db.collection("state").document("calendar_watch")
+        await state_ref.set({"channel_id": channel_id, "updated_at": firestore.SERVER_TIMESTAMP})
+
+        logger.info(f"Calendar watch successfully set up: {json.dumps(watch_info)}")
+        return {"status": "success", "details": watch_info}
+
     except Exception as e:
-        logger.error(f"Error setting up calendar watch: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error setting up calendar watch: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to set up calendar watch.")

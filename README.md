@@ -23,14 +23,14 @@ MeetConfirm is a powerful example of a "vertical chain" application built entire
 ```mermaid
 graph TD
     subgraph User Interaction
-        A[Firebase In-App/Email] -->|User books a meeting| B(Google Calendar);
+        A[Firebase In-App/Email] -- User books a meeting --> B(Google Calendar);
     end
     subgraph Automated Backend
-        B -->|Event Created Webhook| C{MeetConfirm on Cloud Run};
-        C -->|1. Create Event State| D[Firestore];
-        C -->|2. Schedule Timers| E[Cloud Tasks];
-        E -- T-2 hours -->|3. Trigger Confirmation| C;
-        C -->|4. Send Email| F(Gmail API);
+        B -- Event Created Webhook --> C{MeetConfirm on Cloud Run};
+        C -- 1. Create Event State --> D[Firestore];
+        C -- 2. Schedule Timers --> E[Cloud Tasks];
+        E -- T-2 hours --> C -- 3. Trigger Confirmation --> C;
+        C -- 4. Send Email --> F(Gmail API);
     end
     style C fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#DB4437,stroke:#fff,stroke-width:2px,color:#fff

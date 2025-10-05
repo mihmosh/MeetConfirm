@@ -82,16 +82,21 @@ After deployment, you can verify that the service is running correctly:
 
 1.  **Health Check:**
     ```bash
-    curl https://<your-service-url>/healthz
+    curl https://<your-service-url>/api/v1/healthz
     ```
     This should return `{"status":"ok"}`.
 
 2.  **Trigger Onboarding Test:**
     The deployment script does this automatically, but you can trigger it manually:
     ```bash
-    curl -X POST -H "Authorization: Bearer $(gcloud auth print-identity-token)" https://<your-service-url>/onboarding/run-test
+    curl -X POST -H "Authorization: Bearer $(gcloud auth print-identity-token)" https://<your-service-url>/api/v1/onboarding/run-test
     ```
     This will send a welcome email and create a test event in your calendar, which will trigger the confirmation flow.
 
 3.  **Check Logs:**
     Monitor the logs for your service in the Cloud Run section of the GCP Console to see the application processing events.
+
+---
+
+For a high-level overview of the project, see [README.md](README.md).  
+For a detailed look at the internal logic, see [ARCHITECTURE.md](ARCHITECTURE.md).

@@ -75,3 +75,8 @@ MeetConfirm is designed to be virtually free for most real-world scenarios by le
 **Maintainer:** Michal Barodkin (Blatt sp. z o.o., Warsaw)  
 **Contact:** michal.b@heartscan.app  
 *Built with Gemini 2.5 Pro + Cline (AI-assisted coding)*
+
+---
+
+For deployment instructions, see [DEPLOY.md](DEPLOY.md).  
+For a detailed look at the internal logic, see [ARCHITECTURE.md](ARCHITECTURE.md).

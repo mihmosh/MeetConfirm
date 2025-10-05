@@ -46,3 +46,8 @@ The application is built around a modular structure, with responsibilities separ
 *   **Why not Pub/Sub?** While Pub/Sub is a powerful messaging service, it would be overkill for this application. Cloud Tasks provides the simple, scheduled, "at-least-once" delivery needed for the confirmation and enforcement logic without the added complexity of a message bus.
 
 *   **Why Firestore over Cloud SQL?** The application's data model is very simple: a key-value store for event states. Firestore's document model is a natural fit, and its serverless nature, automatic scaling, and generous free tier make it more cost-effective and easier to manage than a relational database like Cloud SQL for this specific use case.
+
+---
+
+For a high-level overview of the project, see [README.md](README.md).  
+For deployment instructions, see [DEPLOY.md](DEPLOY.md).

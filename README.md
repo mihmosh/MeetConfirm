@@ -108,6 +108,10 @@ MeetConfirm is designed to be virtually free for most real-world scenarios by le
 **Contact:** michal.b@heartscan.app  
 *Built with Gemini 2.5 Pro + Cline (AI-assisted coding)*
 
+## Intended Audience
+
+This repository is a reference implementation for teams exploring full-stack automation within the Google Cloud ecosystem.
+
 ---
 
 For deployment instructions, see [DEPLOY.md](DEPLOY.md).  

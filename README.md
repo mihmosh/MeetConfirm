@@ -104,7 +104,9 @@ MeetConfirm is designed to be virtually free for most real-world scenarios by le
 ---
 
 **Maintainer:** Michal Barodkin (Blatt sp. z o.o., Warsaw)  
-*Founder at [HeartScan](https.
+*Founder at [HeartScan](https://heartscan.app) & Alumnus of [Google for Startups Campus, Warsaw](https://www.campus.co/warsaw/)*  
+**Contact:** michal.b@heartscan.app  
+*Built with Gemini 2.5 Pro + Cline (AI-assisted coding)*
 
 ---
 

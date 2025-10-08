@@ -4,6 +4,13 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 function Log($m){Write-Host "[INFO] $m" -ForegroundColor Cyan}
 function OK($m){Write-Host "[OK] $m" -ForegroundColor Green}
+function Warn($m){Write-Host "[WARN] $m" -ForegroundColor Yellow}
+
+# --- Pre-flight Check ---
+if (-not (gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>$null)) {
+    Warn "Gcloud CLI is not authenticated. Please run 'gcloud auth login' in your terminal before proceeding."
+    Read-Host "Press Enter to continue after you have logged in..."
+}
 
 . "$root\init-project.ps1"
 . "$root\auth-secrets.ps1"

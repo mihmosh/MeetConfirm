@@ -12,7 +12,11 @@ The deployment script, co-developed with **Gemini 2.5 Pro and Cline**, automates
 
 Before you begin, ensure you have the following installed and configured:
 
-*   **Google Cloud SDK:** [Install gcloud](https://cloud.google.com/sdk/docs/install) and authenticate with your account (`gcloud auth login`).
+*   **Google Cloud SDK:** [Install gcloud](https://cloud.google.com/sdk/docs/install).
+*   **Active gcloud Authentication:** Before running any scripts, you **must** authenticate the gcloud CLI by running the following command in your terminal and following the browser-based login process:
+    ```bash
+    gcloud auth login
+    ```
 *   **A GCP Project:** Have a project created with billing enabled.
 *   **PowerShell** (for Windows) or **Bash** (for Linux/macOS).
 *   **curl** and **jq** (for Linux/macOS).

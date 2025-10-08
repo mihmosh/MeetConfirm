@@ -11,7 +11,35 @@ function Init-Project {
     }
 
     $project = gcloud config get-value project 2>$null
-    if (-not $project) { $project = Read-Host "Enter GCP project id"; gcloud config set project $project | Out-Null }
+    $useCurrent = "y"
+    if ($project) {
+        $useCurrent = Read-Host "Do you want to use the current project '$project'? (Y/n)"
+    }
+
+    if (-not $project -or $useCurrent.ToLower() -eq "n") {
+        Log "Fetching available projects..."
+        $projects = gcloud projects list --format="json" | ConvertFrom-Json
+        
+        if ($projects) {
+            Write-Host "Please select a project:"
+            for ($i = 0; $i -lt $projects.Count; $i++) {
+                Write-Host ("{0,3}: {1} ({2})" -f ($i + 1), $projects[$i].projectId, $projects[$i].name)
+            }
+            
+            $choice = Read-Host "Enter a number from the list, or enter a new Project ID"
+            $choice = $choice.Trim()
+            
+            if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $projects.Count) {
+                $project = $projects[[int]$choice - 1].projectId
+            } else {
+                $project = $choice
+            }
+        } else {
+            $project = Read-Host "Could not list projects. Please enter a Project ID manually"
+        }
+    }
+    
+    gcloud config set project $project
     OK "Using project: $project"
 
     $region = Read-Host "Enter region (default: us-central1)"

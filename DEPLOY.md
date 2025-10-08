@@ -17,7 +17,8 @@ Before you begin, ensure you have the following installed and configured:
     ```bash
     gcloud auth login
     ```
-*   **A GCP Project:** Have a project created with billing enabled.
+*   **A GCP Project:** The deployment script can create a new GCP project for you. If you prefer to use an existing project, please have the Project ID ready.
+*   **A GCP Billing Account:** The script can link your project to an existing billing account. If you do not have one, you will be guided to create one in the Google Cloud Console.
 *   **PowerShell** (for Windows) or **Bash** (for Linux/macOS).
 *   **curl** and **jq** (for Linux/macOS).
 

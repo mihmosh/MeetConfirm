@@ -20,22 +20,35 @@ function Init-Project {
         Log "Fetching available projects..."
         $projects = gcloud projects list --format="json" | ConvertFrom-Json
         
+        Write-Host "Please select a project:"
         if ($projects) {
-            Write-Host "Please select a project:"
             for ($i = 0; $i -lt $projects.Count; $i++) {
                 Write-Host ("{0,3}: {1} ({2})" -f ($i + 1), $projects[$i].projectId, $projects[$i].name)
             }
-            
-            $choice = Read-Host "Enter a number from the list, or enter a new Project ID"
-            $choice = $choice.Trim()
-            
-            if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $projects.Count) {
-                $project = $projects[[int]$choice - 1].projectId
-            } else {
-                $project = $choice
-            }
+        }
+        
+        $choice = Read-Host "Enter a number from the list, or enter a new Project ID to create a new project"
+        $choice = $choice.Trim()
+        
+        $selectedProject = $null
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $projects.Count) {
+            $selectedProject = $projects[[int]$choice - 1]
+            $project = $selectedProject.projectId
         } else {
-            $project = Read-Host "Could not list projects. Please enter a Project ID manually"
+            $project = $choice
+            $selectedProject = $projects | Where-Object { $_.projectId -eq $project }
+        }
+
+        if (-not $selectedProject) {
+            $confirmCreate = Read-Host "Project '$project' does not exist. Do you want to create it? (Y/n)"
+            if ($confirmCreate.ToLower() -eq "y") {
+                Log "Creating project '$project'..."
+                gcloud projects create $project
+                OK "Project created."
+            } else {
+                Err "Project not found. Exiting."
+                exit 1
+            }
         }
     }
     
@@ -49,8 +62,29 @@ function Init-Project {
     Log "Checking billing..."
     $billing = gcloud beta billing projects describe $project --format="value(billingEnabled)" 2>$null
     if ($billing -ne "True") {
-        Err "Billing disabled. Enable at https://console.cloud.google.com/billing/"
-        exit 1
+        Log "Billing is not enabled for project '$project'. Let's fix that."
+        $billingAccounts = gcloud beta billing accounts list --format="json" | ConvertFrom-Json
+        
+        if ($billingAccounts) {
+            Write-Host "Please select a billing account to link to this project:"
+            for ($i = 0; $i -lt $billingAccounts.Count; $i++) {
+                Write-Host ("{0,3}: {1} ({2})" -f ($i + 1), $billingAccounts[$i].displayName, $billingAccounts[$i].name)
+            }
+            
+            $billingChoice = Read-Host "Enter a number from the list"
+            if ($billingChoice -match '^\d+$' -and [int]$billingChoice -ge 1 -and [int]$billingChoice -le $billingAccounts.Count) {
+                $selectedBillingAccount = $billingAccounts[[int]$billingChoice - 1].name
+                Log "Linking project '$project' to billing account '$selectedBillingAccount'..."
+                gcloud beta billing projects link $project --billing-account=$selectedBillingAccount
+                OK "Billing account linked successfully."
+            } else {
+                Err "Invalid selection. Please run the script again."
+                exit 1
+            }
+        } else {
+            Err "No billing accounts found. Please create one manually at https://console.cloud.google.com/billing/ and run the script again."
+            exit 1
+        }
     }
     OK "Billing OK"
 

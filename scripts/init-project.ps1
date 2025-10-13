@@ -5,7 +5,6 @@ function Init-Project {
     function OK($m){Write-Host "[OK] $m" -ForegroundColor Green}
     function Err($m){Write-Host "[ERROR] $m" -ForegroundColor Red}
 
-    Log "Checking gcloud CLI..."
     if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) {
         Err "gcloud CLI not found."; exit 1
     }

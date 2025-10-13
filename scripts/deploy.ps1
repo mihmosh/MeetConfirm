@@ -7,10 +7,9 @@ function OK($m){Write-Host "[OK] $m" -ForegroundColor Green}
 function Warn($m){Write-Host "[WARN] $m" -ForegroundColor Yellow}
 
 # --- Pre-flight Check ---
-if (-not (gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>$null)) {
-    Warn "Gcloud CLI is not authenticated. Please run 'gcloud auth login' in your terminal before proceeding."
-    Read-Host "Press Enter to continue after you have logged in..."
-}
+Warn "Before you begin: Please ensure the gcloud CLI is installed and authenticated ('gcloud auth login')."
+Warn "For details, see the project README: https://github.com/mihmosh/MeetConfirm"
+Read-Host "Press Enter to continue..."
 
 . "$root\init-project.ps1"
 . "$root\auth-secrets.ps1"
@@ -29,4 +28,5 @@ if ($serviceUrl) {
     $headers = @{ "Authorization" = "Bearer $token" }
     Invoke-RestMethod -Uri $onboardingUrl -Method Post -Headers $headers
     OK "Onboarding test initiated. Check your email."
+    Warn "IMPORTANT: If your OAuth application in Google Cloud is not in 'Production' mode, the authentication token will expire in 7 days, causing the service to fail."
 }

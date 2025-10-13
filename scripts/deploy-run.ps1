@@ -62,5 +62,18 @@ function Deploy-MeetConfirm {
         --update-env-vars="SERVICE_URL=$url" `
         --project=$($Config.ProjectId)
     OK "Service URL updated"
+
+    Log "Setting up calendar watch..."
+    $watchUrl = "$url/api/v1/setup-calendar-watch"
+    $token = gcloud auth print-identity-token
+    $headers = @{ "Authorization" = "Bearer $token" }
+    try {
+        Invoke-RestMethod -Uri $watchUrl -Method Post -Headers $headers
+        OK "Calendar watch configured successfully."
+    } catch {
+        Err "Failed to set up calendar watch. Please check the service logs."
+        exit 1
+    }
+
     return $url
 }
